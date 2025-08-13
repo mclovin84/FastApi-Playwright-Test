@@ -1,4 +1,4 @@
-# main.py - Complete LangChain Property Scraper System with Playwright
+# main.py - Complete LangChain Property Scraper System (PLAYWRIGHT VERSION)
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
@@ -98,237 +98,148 @@ class PropertyData(BaseModel):
     calculations: Dict
     scraped_at: datetime
 
-# County Scraper Agent with Playwright
+# County Scraper Agent (Playwright)
 class CountyScraperAgent:
-    def __init__(self):
-        self.playwright = None
-        self.browser = None
-        
-    async def get_browser(self):
-        """Get or create browser instance"""
-        if not self.playwright:
-            self.playwright = await async_playwright().start()
-            self.browser = await self.playwright.chromium.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox']
-            )
-        return self.browser
-        
     async def scrape_fulton_county(self, address: str) -> Dict:
         """Scrapes Fulton County, GA assessor for owner info using Playwright"""
-        browser = await self.get_browser()
-        page = None
-        
-        try:
-            # Create new page
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
             
-            # Navigate to Fulton County assessor
-            await page.goto("https://qpublic.schneidercorp.com/Application.aspx?App=FultonCountyGA&Layer=Parcels&PageType=Search")
-            
-            # Wait for page to load
-            await page.wait_for_load_state("networkidle")
-            
-            # Accept terms if present
             try:
-                accept_button = page.locator("button:has-text('Accept')")
-                if await accept_button.count() > 0:
-                    await accept_button.click()
-                    await page.wait_for_timeout(1000)
-            except:
-                pass
-            
-            # Fill address search
-            await page.fill("#ctlBodyPane_ctl01_ctl01_txtAddress", address)
-            
-            # Click search button
-            await page.click("#ctlBodyPane_ctl01_ctl01_btnSearch")
-            
-            # Wait for results
-            await page.wait_for_selector(".search-results", timeout=10000)
-            
-            # Click first result
-            await page.click(".search-results tr:nth-child(2) a")
-            
-            # Wait for property details page
-            await page.wait_for_selector("#ctlBodyPane_ctl00_lblOwner", timeout=10000)
-            
-            # Extract owner info
-            owner_name = await page.text_content("#ctlBodyPane_ctl00_lblOwner")
-            mailing_address = await page.text_content("#ctlBodyPane_ctl00_lblMailingAddress")
-            parcel_id = await page.text_content("#ctlBodyPane_ctl00_lblParcelID")
-            property_class = await page.text_content("#ctlBodyPane_ctl00_lblPropertyClass")
-            
-            return {
-                "owner_name": owner_name.strip() if owner_name else "John Smith",
-                "owner_mailing_address": mailing_address.strip() if mailing_address else "123 Main St, Atlanta, GA 30301",
-                "parcel_id": parcel_id.strip() if parcel_id else "14-1234-5678-9012",
-                "property_class": property_class.strip() if property_class else "Residential",
-                "source": "Fulton County Assessor (Playwright)"
-            }
-            
-        except Exception as e:
-            logger.error(f"Fulton scraping error: {str(e)}")
-            # Fallback to mock data if scraping fails
-            return {
-                "owner_name": "John Smith",
-                "owner_mailing_address": "123 Main St, Atlanta, GA 30301",
-                "parcel_id": "14-1234-5678-9012",
-                "property_class": "Residential",
-                "source": "Fulton County Assessor (Mock - Playwright failed)"
-            }
-        finally:
-            if page:
-                await page.close()
+                # Navigate to Fulton County assessor
+                await page.goto("https://qpublic.schneidercorp.com/Application.aspx?App=FultonCountyGA&PageType=Search")
+                await page.wait_for_load_state("networkidle")
+                
+                # Accept terms if present
+                try:
+                    accept_button = page.locator("text=Accept").first
+                    if await accept_button.is_visible():
+                        await accept_button.click()
+                        await page.wait_for_timeout(2000)
+                except:
+                    pass
+                
+                # Type address in search field
+                search_input = page.locator("input[placeholder*='address'], input[name*='address'], input[id*='address']").first
+                await search_input.fill(address)
+                await search_input.press("Enter")
+                
+                # Wait for search results
+                await page.wait_for_timeout(8000)
+                
+                # Click on first search result
+                try:
+                    first_result = page.locator("a[href*='Parcel'], tr a, .search-results a").first
+                    await first_result.click()
+                    await page.wait_for_timeout(5000)
+                except Exception as e:
+                    logger.error(f"No search results found: {e}")
+                    raise Exception("No search results found for this address")
+                
+                # Extract data from property details page
+                extracted_text = await page.content()
+                
+                # For now, return basic structure - you'll need to parse the HTML
+                return {
+                    "owner_name": "Extracted from property details page",
+                    "owner_mailing_address": "Extracted from property details page", 
+                    "parcel_id": "Extracted from property details page",
+                    "property_class": "Extracted from property details page",
+                    "source": "Fulton County Assessor (Playwright)",
+                    "raw_extraction": extracted_text
+                }
+                
+            except Exception as e:
+                logger.error(f"Fulton scraping error: {e}")
+                raise Exception(f"Failed to scrape Fulton County data: {e}")
+            finally:
+                await browser.close()
     
     async def scrape_la_county(self, address: str) -> Dict:
         """Scrapes LA County assessor for owner info using Playwright"""
-        browser = await self.get_browser()
-        page = None
-        
-        try:
-            # Create new page
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
             
-            # Navigate to LA County assessor
-            await page.goto("https://assessor.lacounty.gov/")
-            
-            # Wait for page to load
-            await page.wait_for_load_state("networkidle")
-            
-            # Click property search link
-            await page.click("a:has-text('Property Search')")
-            await page.wait_for_load_state("networkidle")
-            
-            # Fill address search
-            await page.fill("#address", address)
-            
-            # Click search button
-            await page.click("#searchButton")
-            
-            # Wait for results
-            await page.wait_for_selector(".results-table", timeout=10000)
-            
-            # Click first result
-            await page.click(".results-table tr:nth-child(1) a")
-            
-            # Wait for property details page
-            await page.wait_for_selector(".property-details", timeout=10000)
-            
-            # Extract owner info
-            owner_name = await page.text_content(".owner-name")
-            mailing_address = await page.text_content(".mailing-address")
-            
-            return {
-                "owner_name": owner_name.strip() if owner_name else "Jane Doe",
-                "owner_mailing_address": mailing_address.strip() if mailing_address else "456 Oak Ave, Los Angeles, CA 90210",
-                "source": "LA County Assessor (Playwright)"
-            }
-            
-        except Exception as e:
-            logger.error(f"LA County scraping error: {str(e)}")
-            # Fallback to mock data if scraping fails
-            return {
-                "owner_name": "Jane Doe",
-                "owner_mailing_address": "456 Oak Ave, Los Angeles, CA 90210",
-                "source": "LA County Assessor (Mock - Playwright failed)"
-            }
-        finally:
-            if page:
-                await page.close()
-
-# Zillow Scraper Agent with Playwright
-class ZillowScraperAgent:
-    def __init__(self):
-        self.playwright = None
-        self.browser = None
-        
-    async def get_browser(self):
-        """Get or create browser instance"""
-        if not self.playwright:
-            self.playwright = await async_playwright().start()
-            self.browser = await self.playwright.chromium.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox']
-            )
-        return self.browser
-        
-    async def get_listing_price(self, address: str) -> Dict:
-        """Scrapes Zillow for current listing price using Playwright"""
-        browser = await self.get_browser()
-        page = None
-        
-        try:
-            # Create new page
-            page = await browser.new_page()
-            
-            # Navigate to Zillow
-            await page.goto("https://www.zillow.com/")
-            
-            # Wait for page to load
-            await page.wait_for_load_state("networkidle")
-            
-            # Fill address search
-            search_input = page.locator("input[placeholder*='address']")
-            await search_input.fill(address)
-            await page.press("input[placeholder*='address']", "Enter")
-            
-            # Wait for results page
-            await page.wait_for_load_state("networkidle")
-            
-            # Wait for price to load
-            await page.wait_for_selector("[data-test='property-card-price']", timeout=10000)
-            
-            # Extract price
-            price_text = await page.text_content("[data-test='property-card-price']")
-            
-            # Extract property details
-            details = {}
             try:
-                details['bedrooms'] = await page.text_content("[data-test='property-card-bed']")
-                details['bathrooms'] = await page.text_content("[data-test='property-card-bath']")
-                details['sqft'] = await page.text_content("[data-test='property-card-sqft']")
-            except:
-                pass
+                # Navigate to LA County assessor
+                await page.goto("https://assessor.lacounty.gov/")
+                await page.wait_for_load_state("networkidle")
+                
+                # Click Property Search link
+                try:
+                    search_link = page.locator("text=Property Search, a[href*='search']").first
+                    await search_link.click()
+                    await page.wait_for_timeout(3000)
+                except:
+                    pass
+                
+                # Type address in search field
+                search_input = page.locator("input[placeholder*='address'], input[name*='address'], input[id*='address']").first
+                await search_input.fill(address)
+                await search_input.press("Enter")
+                
+                # Wait for search results
+                await page.wait_for_timeout(8000)
+                
+                # Extract data
+                extracted_text = await page.content()
+                
+                return {
+                    "owner_name": "Extracted from LA County page",
+                    "owner_mailing_address": "Extracted from LA County page",
+                    "source": "LA County Assessor (Playwright)",
+                    "raw_extraction": extracted_text
+                }
+                
+            except Exception as e:
+                logger.error(f"LA County scraping error: {e}")
+                raise Exception(f"Failed to scrape LA County data: {e}")
+            finally:
+                await browser.close()
+
+# Zillow Scraper Agent (Playwright)
+class ZillowScraperAgent:
+    async def get_listing_price(self, address: str) -> Dict:
+        """Scrapes property data using Google search with Playwright"""
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
             
-            # Parse price
-            if price_text:
-                price = float(re.sub(r'[^\d]', '', price_text))
-            else:
-                # Fallback calculation
-                base_price = 450000 if "GA" in address or "Georgia" in address else 750000
-                price_variation = hash(address) % 200000
-                price = base_price + price_variation
-            
-            return {
-                "listing_price": price,
-                "property_details": details or {
-                    "bedrooms": "3",
-                    "bathrooms": "2", 
-                    "sqft": "1,800"
-                },
-                "source": "Zillow (Playwright)"
-            }
-            
-        except Exception as e:
-            logger.error(f"Zillow scraping error: {str(e)}")
-            # Fallback to mock data if scraping fails
-            base_price = 450000 if "GA" in address or "Georgia" in address else 750000
-            price_variation = hash(address) % 200000
-            price = base_price + price_variation
-            
-            return {
-                "listing_price": price,
-                "property_details": {
-                    "bedrooms": "3",
-                    "bathrooms": "2", 
-                    "sqft": "1,800"
-                },
-                "source": "Zillow (Mock - Playwright failed)"
-            }
-        finally:
-            if page:
-                await page.close()
+            try:
+                # Navigate to Google
+                await page.goto("https://www.google.com/")
+                await page.wait_for_load_state("networkidle")
+                
+                # Search for property
+                search_query = f"{address} zillow price"
+                search_input = page.locator("input[name='q']")
+                await search_input.fill(search_query)
+                await search_input.press("Enter")
+                
+                # Wait for search results
+                await page.wait_for_timeout(5000)
+                
+                # Extract data
+                extracted_text = await page.content()
+                
+                return {
+                    "listing_price": 0,  # Will need parsing
+                    "property_details": {
+                        "bedrooms": "Extracted from search results",
+                        "bathrooms": "Extracted from search results",
+                        "sqft": "Extracted from search results"
+                    },
+                    "source": "Google Search (Playwright)",
+                    "raw_extraction": extracted_text
+                }
+                
+            except Exception as e:
+                logger.error(f"Google search scraping error: {e}")
+                raise Exception(f"Failed to scrape property data: {e}")
+            finally:
+                await browser.close()
 
 # LOI Calculator
 class LOICalculator:
@@ -356,7 +267,7 @@ class LOICalculator:
         
         return calculations
 
-# Document Generator
+# Document Generator (same as Airtop version)
 class DocumentGenerator:
     @staticmethod
     def create_loi_docx(property_data: PropertyData) -> str:
@@ -509,7 +420,7 @@ async def scrape_property(address: str) -> PropertyData:
     county_scraper = CountyScraperAgent()
     zillow_scraper = ZillowScraperAgent()
     
-    # Parallel scraping
+    # Parallel scraping with timeout
     if "GA" in address or "Georgia" in address:
         owner_task = county_scraper.scrape_fulton_county(address)
     elif "CA" in address or "California" in address:
@@ -519,8 +430,14 @@ async def scrape_property(address: str) -> PropertyData:
     
     price_task = zillow_scraper.get_listing_price(address)
     
-    # Wait for both
-    owner_info, price_info = await asyncio.gather(owner_task, price_task)
+    # Wait for both with timeout (30 seconds total)
+    try:
+        owner_info, price_info = await asyncio.wait_for(
+            asyncio.gather(owner_task, price_task),
+            timeout=30.0
+        )
+    except asyncio.TimeoutError:
+        raise Exception("Scraping timed out after 30 seconds. Please try again.")
     
     # Calculate offer terms
     calculations = LOICalculator.calculate_offer(price_info["listing_price"])
@@ -538,7 +455,7 @@ async def scrape_property(address: str) -> PropertyData:
     )
     
     # Cache it
-    property_cache[property_data] = property_data
+    property_cache[address] = property_data
     
     return property_data
 
@@ -645,14 +562,13 @@ def health_check():
 # Test Playwright endpoint
 @app.get("/test-playwright")
 async def test_playwright():
-    """Test Playwright browser automation"""
+    """Test Playwright directly"""
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
             
-            # Test navigation
-            await page.goto("https://www.google.com")
+            await page.goto("https://www.google.com/")
             title = await page.title()
             
             await browser.close()
@@ -660,14 +576,10 @@ async def test_playwright():
             return {
                 "playwright_test": "success",
                 "page_title": title,
-                "status": "Playwright is working correctly"
+                "browser": "chromium"
             }
     except Exception as e:
-        return {
-            "playwright_test": "failed",
-            "error": str(e),
-            "status": "Playwright test failed"
-        }
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
